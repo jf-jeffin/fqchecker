@@ -4,17 +4,14 @@ pub mod fqc {
     use std::io::{BufRead, BufReader};
     use tokio::sync::watch::Sender;
 
+    use plotters::{prelude::*, style::full_palette::BLUE_700};
+    use std::collections::HashMap;
+    use std::time::{Duration, Instant};
     use tabled::{
         builder::Builder,
         settings::{Alignment, Style, Width},
     };
-    use std::collections::HashMap;
-    use std::time::{Duration, Instant};
-    use plotters::{
-        prelude::*,
-        style::full_palette::BLUE_700
-    };
-    use tokio::time::sleep;
+   
 
     #[derive(Debug)]
     pub struct ReadInfo {
@@ -33,27 +30,32 @@ pub mod fqc {
             }
         }
     }
-    #[derive( Debug, Default, Clone)]
+    #[derive(Debug, Default, Clone)]
     pub struct CrrFileProcessInfo {
         pub read_count: usize,
         pub base_count: usize,
         pub file_name: String,
         pub directory_name: String,
     }
-    impl  CrrFileProcessInfo {
-        pub fn new(filename: &str) ->  Self {
+    impl CrrFileProcessInfo {
+        pub fn new(filename: &str) -> Self {
+            if let Some(file_dir)  = std::path::Path::new(filename).parent(){
+                if let Some(fd) = file_dir.to_str(){
+                    return CrrFileProcessInfo {
+                        read_count: 0,
+                        base_count: 0,
+                        file_name: filename.to_string(),
+                        directory_name: fd.to_string(),
+                        }
+                    }
+                }
             CrrFileProcessInfo {
                 read_count: 0,
                 base_count: 0,
                 file_name: filename.to_string(),
-                directory_name: String::from(filename)
-            }
+                directory_name: String::from(filename),
+            }     
         }
-
-        // pub fn set_file_name(&mut self, file_name: &str) -> &Self{
-        //     self.file_name = file_name.to_string();
-        //     self
-        // }
     }
 
     pub const PHRED_SCORE_RANGE: usize = 94;
@@ -66,7 +68,6 @@ pub mod fqc {
         t: i64,
         n: i64,
     }
-
 
     pub trait Helpers {
         fn init() -> Self;
@@ -140,13 +141,12 @@ pub mod fqc {
 
         fn plot_graph(&self) {
             let (width, height): (i32, i32) = (1024, 768);
-            let mut bm = BitMapBackend::new("plot.png", (width as u32, height as u32))
-                .into_drawing_area();
-            let title_style = TextStyle::from(("times-new-roman", 50)
-                .into_font()).color(&(WHITE));
+            let mut bm =
+                BitMapBackend::new("plot.png", (width as u32, height as u32)).into_drawing_area();
+            let title_style = TextStyle::from(("times-new-roman", 50).into_font()).color(&(WHITE));
 
             match bm.titled("Base Compositions", title_style) {
-                Ok(d) =>  bm = d ,
+                Ok(d) => bm = d,
                 Err(e) => println!("Error: {:?}", e),
             }
             // let (mut title_area, mut plot_area) = bm.split_vertically(60);
@@ -183,7 +183,6 @@ pub mod fqc {
     }
 
     impl Helpers for BaseQualityProfile {
-
         fn init() -> Self {
             BaseQualityProfile {
                 g_quality: [0; PHRED_SCORE_RANGE],
@@ -206,7 +205,7 @@ pub mod fqc {
                         qual.count,
                         percentage_value(qual.count, ava_qual.0)
                     )
-                        .as_str(),
+                    .as_str(),
                 ]);
             });
             builder_t.push_column(["Total", format!("{}", ava_qual.0).as_str()]);
@@ -293,7 +292,11 @@ pub mod fqc {
     }
 
     #[inline]
-    pub fn extract_count(input_file_reader: BufReader<File>,infos:&mut CrrFileProcessInfo,  sp: Sender<CrrFileProcessInfo>) -> (BaseProfile, BaseQualityProfile) {
+    pub fn extract_count(
+        input_file_reader: BufReader<File>,
+        infos: &mut CrrFileProcessInfo,
+        sp: Sender<CrrFileProcessInfo>,
+    ) -> (BaseProfile, BaseQualityProfile) {
         let mut new_seq: bool = false;
         let mut quality_ln: bool = false;
         let mut b_profiles: BaseProfile = BaseProfile::init();
@@ -324,9 +327,7 @@ pub mod fqc {
 
                 // read_info.total += 1;
                 // infos.read_count += 1;
-                infos.read_count   += 1;
-
-
+                infos.read_count += 1;
 
                 *read_info.length.entry(seq_ln.len()).or_insert(0) += 1;
 
@@ -334,10 +335,11 @@ pub mod fqc {
                 let (b_profiles, bqf) =
                     count_bases(&seq_ln, &quality_val_ln, &mut b_profiles, &mut bqf);
                 infos.base_count += b_profiles.total as usize;
-                match sp.send(infos.clone()){
+                match sp.send(infos.clone()) {
                     Ok(_) => {}
-                    Err(e) => {panic!("Not working , 22222222222222222222222")}
-
+                    Err(e) => {
+                        panic!("Not working , 22222222222222222222222")
+                    }
                 };
 
                 std::thread::sleep(std::time::Duration::from_millis(10));
@@ -347,8 +349,8 @@ pub mod fqc {
         (b_profiles, bqf)
     }
 
-    pub fn fq_init(infos:&mut CrrFileProcessInfo, sp: Sender<CrrFileProcessInfo>)   {
-        let c ="C:\\Users\\Jef Finn\\Downloads\\downsampled_SampleB_R1.fastq\\downsampled_SampleB_R1.fastq";
+    pub fn fq_init(infos: &mut CrrFileProcessInfo, sp: Sender<CrrFileProcessInfo>) {
+        let c = "C:\\Users\\Jef Finn\\Downloads\\downsampled_SampleB_R1.fastq\\downsampled_SampleB_R1.fastq";
         let file = File::open(infos.file_name.as_str());
         match file {
             Err(e) => {
@@ -361,14 +363,10 @@ pub mod fqc {
                 // g.0.dsply_table();
                 // g.0.plot_graph();
                 // g.1.dsply_table();
-
-
             }
         }
-
     }
     fn percentage_value(val: i64, total: i64) -> f32 {
         (((val as f32 / total as f32) * 100.0) * 100.0).round() / 100.0
     }
-
 }
