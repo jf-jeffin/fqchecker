@@ -10,6 +10,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style, Stylize},
     text::{Line, Text},
+    symbols::border,
     widgets::{self, Block, BorderType, Borders, Padding, Paragraph, Widget},
 };
 use tokio::sync::watch::Receiver;
@@ -18,6 +19,7 @@ use tokio::sync::watch::Receiver;
 pub struct Interface {
     pub info: CrrFileProcessInfo,
     pub exit: bool,
+    // pub Init_time
 }
 
 impl Interface {
@@ -34,12 +36,20 @@ impl Interface {
         terminal: &mut DefaultTerminal,
         rp: &mut Receiver<CrrFileProcessInfo>,
     ) -> std::io::Result<()> {
+        
+        
         while !self.exit {
             match rp.borrow_and_update() {
                 info => {
                     self.info = info.clone();
                 }
             }
+            
+            // if !self.info.is_file_reading{
+            
+                
+                
+            // }
 
             // terminal.clear()?;
             terminal.draw(|frame| {
@@ -72,44 +82,74 @@ impl Interface {
 }
 impl Widget for &Interface {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let title_str = Line::from("FQCHECK".bold()).left_aligned();
         let block = Block::bordered()
             .style(Style::default().bg(Color::Black).fg(Color::White))
             .title_top(Line::from("[ FQCHECK ]".bold()).left_aligned())
             .padding(Padding::new(1, 1, 1, 1))
-            .border_type(BorderType::Plain);
+            .border_type(BorderType::Thick);
         let inr = block.inner(area);
         block.render(area, buf);
 
-        let l1 = Layout::default()
+        let main_layout= Layout::default()
             .direction(Direction::Vertical)
-            .constraints(vec![15, 75])
+            .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
             .split(inr);
+
+        let l1 = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(25),Constraint::Percentage(75)])
+            .split(main_layout[0]);
+
         let fgrrind = Block::bordered()
             .style(Style::default().bg(Color::Black).fg(Color::White))
             .title_top(Line::from("[ INFO ]".bold()).left_aligned())
             .padding(Padding::uniform(1))
             .border_type(BorderType::Plain);
         fgrrind.clone().render(l1[0], buf);
-        let l1_layouts = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([50, 50])
-            .split(fgrrind.inner(l1[0]));
-        let l1_layouts_c1 = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([50, 50])
-            .split(l1_layouts[0]);
-        let l1_layouts_c2 = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([50, 50])
-            .split(l1_layouts[1]);
+        // let l1_layouts = Layout::default()
+        //     .direction(Direction::Vertical)
+        //     .constraints([100])
+        //     .split(l1[1]);
 
-        Paragraph::new(self.info.read_count.to_string())
+        let fgrrind_col2 = Block::bordered()
+            .style(Style::default().bg(Color::Black).fg(Color::White))
+            .title_top(Line::from("[ INFO 2 ]".bold()).left_aligned())
+            .padding(Padding::uniform(1))
+            .border_type(BorderType::Plain);
+
+        fgrrind_col2.render(l1[1], buf);
+        // let t = k.std::time::Duration::abs_diff( )
+        
+
+        if self.info.is_file_reading {
+            Paragraph::new(format!(
+            "Processing...\nFile Name:{}\nSize: {}B\nRead Count: {}\nBase Count:{}",
+            self.info.file_name,
+            self.info.file_size,
+            self.info.read_count,
+            self.info.base_count))
             .block(Block::new())
-            .render(l1_layouts_c1[0], buf);
-        Paragraph::new(self.info.file_name.clone())
+            .render(fgrrind.inner(l1[0]), buf);
+            return;
+        }
+        
+    
+        Paragraph::new(format!(
+            "Processed\nFile Name: {}\nSize: {}B\nRead Count: {}\nBase Count:{}",
+            self.info.file_name,
+            self.info.file_size,
+            self.info.read_count,
+            self.info.base_count))
             .block(Block::new())
-            .render(l1_layouts_c1[1], buf);
+            .render(fgrrind.inner(l1[0]), buf);
+
+         Block::bordered()
+            .title_top(Line::from("[ Completed ]".bold()).left_aligned())
+            .border_type(BorderType::Plain)
+            .render(main_layout[1], buf);
+    
+
+
     }
 }
 

@@ -1,6 +1,6 @@
 pub mod fqc {
 
-    use std::fs::File;
+    use std::fs::{File, metadata};
     use std::io::{BufRead, BufReader};
     use tokio::sync::watch::Sender;
 
@@ -35,26 +35,28 @@ pub mod fqc {
         pub read_count: usize,
         pub base_count: usize,
         pub file_name: String,
-        pub directory_name: String,
+        pub file_size: u64,
+        pub is_file_reading: bool
+
     }
     impl CrrFileProcessInfo {
         pub fn new(filename: &str) -> Self {
-            if let Some(file_dir)  = std::path::Path::new(filename).parent(){
-                if let Some(fd) = file_dir.to_str(){
-                    return CrrFileProcessInfo {
-                        read_count: 0,
-                        base_count: 0,
-                        file_name: filename.to_string(),
-                        directory_name: fd.to_string(),
-                        }
-                    }
-                }
+            let mut temp = 0;
+            if let Ok(md) = metadata(filename){
+                if !md.is_file() {
+                    panic!("Not a file {}", filename);
+                } else {
+                    temp = md.len();
+                } 
+            }
             CrrFileProcessInfo {
-                read_count: 0,
-                base_count: 0,
-                file_name: filename.to_string(),
-                directory_name: String::from(filename),
-            }     
+                    read_count: 0,
+                    base_count: 0,
+                    file_size: temp,
+                    file_name: filename.to_string(),
+                    is_file_reading: false
+
+            }
         }
     }
 
@@ -304,9 +306,12 @@ pub mod fqc {
         let mut read_info = ReadInfo::init();
         let mut seq_ln: Vec<u8> = Vec::new();
         let mut quality_val_ln: Vec<u8> = Vec::new();
+        infos.is_file_reading = true;
+        
         // let mut total_reads: i64 = 0;
         for line in input_file_reader.lines() {
             if let Ok(ln) = line {
+                std::thread::sleep(Duration::from_millis(9));
                 if ln.starts_with("@") {
                     new_seq = true;
                     continue;
@@ -338,15 +343,22 @@ pub mod fqc {
                 match sp.send(infos.clone()) {
                     Ok(_) => {}
                     Err(e) => {
-                        panic!("Not working , 22222222222222222222222")
+                        panic!("Not working: {}",e)
                     }
-                };
+                }
 
-                std::thread::sleep(std::time::Duration::from_millis(10));
             }
         }
-
+        infos.is_file_reading =  false;
+        match sp.send(infos.clone()) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        panic!("Not working: {}",e)
+                    }
+                }
+        drop(sp);
         (b_profiles, bqf)
+        
     }
 
     pub fn fq_init(infos: &mut CrrFileProcessInfo, sp: Sender<CrrFileProcessInfo>) {
