@@ -1,4 +1,5 @@
 use crate::fqchecker::fqc::CrrFileProcessInfo;
+use color_eyre::owo_colors::OwoColorize;
 use crossterm::event::{
     self,
     Event,
@@ -11,14 +12,16 @@ use ratatui::{
     style::{Color, Style, Stylize},
     text::{Line, Text},
     symbols::border,
-    widgets::{self, Block, BorderType, Borders, Padding, Paragraph, Widget},
+    widgets::{self, Block, BorderType, Borders,Tabs, Padding, Paragraph, Widget},
 };
 use tokio::sync::watch::Receiver;
+
 
 #[derive(Debug, Default, Clone)]
 pub struct Interface {
     pub info: CrrFileProcessInfo,
     pub exit: bool,
+    pub active_tab: usize
     // pub Init_time
 }
 
@@ -69,6 +72,8 @@ impl Interface {
             if let Event::Key(key_event) = event::read()? {
                 match key_event.code {
                     KeyCode::Char('q') => self.exit(),
+                    KeyCode::Char('1')  => self.set_active_tab(0),
+                    KeyCode::Char('2') => self.set_active_tab(1),
                     _ => {}
                 }
             }
@@ -79,6 +84,21 @@ impl Interface {
     fn exit(&mut self) {
         self.exit = true;
     }
+
+    fn set_active_tab(&mut self,tab_index:usize){
+        if tab_index <= 1 {
+            self.active_tab = tab_index
+        }
+    }
+
+    fn get_active_tab(&self) -> usize {
+        if self.active_tab == 0 {
+            self.active_tab + 1 
+        }else {
+            self.active_tab
+        }
+    }
+
 }
 impl Widget for &Interface {
     fn render(self, area: Rect, buf: &mut Buffer) {
@@ -103,7 +123,7 @@ impl Widget for &Interface {
         let fgrrind = Block::bordered()
             .style(Style::default().bg(Color::Black).fg(Color::White))
             .title_top(Line::from("[ INFO ]".bold()).left_aligned())
-            .padding(Padding::uniform(1))
+            .padding(Padding::top(1))
             .border_type(BorderType::Plain);
         fgrrind.clone().render(l1[0], buf);
         // let l1_layouts = Layout::default()
@@ -114,16 +134,32 @@ impl Widget for &Interface {
         let fgrrind_col2 = Block::bordered()
             .style(Style::default().bg(Color::Black).fg(Color::White))
             .title_top(Line::from("[ INFO 2 ]".bold()).left_aligned())
+            // .padding(Padding::uniform(1))
+            .border_type(BorderType::Plain);
+        
+        fgrrind_col2.clone().render(l1[1], buf);
+
+        let result_block = Block::bordered().style(Style::default().bg(Color::Black).fg(Color::White))
+            .title_top(Line::from("[ Result ]".bold()).left_aligned())
             .padding(Padding::uniform(1))
             .border_type(BorderType::Plain);
 
-        fgrrind_col2.render(l1[1], buf);
+
+        let id:String =  if let Some(l) = self.info.header.split_once(":"){
+                l.0.to_string().strip_prefix("@").unwrap().to_string()
+            } else { 
+                " ".to_string()
+            } ; 
+            Paragraph::new(id).render(fgrrind_col2.inner(l1[1]), buf);
+
+        // fgrrind_col2.clone().render(l1[1], buf);
         // let t = k.std::time::Duration::abs_diff( )
         
 
+            // upper_col2.clone().render(main_layout[1], buf);
         if self.info.is_file_reading {
             Paragraph::new(format!(
-            "Processing...\nFile Name:{}\nSize: {}B\nRead Count: {}\nBase Count:{}",
+            " Processing...\n\n File Name:{}\n Size: {}B\n Read Count: {}\n Base Count:{}",
             self.info.file_name,
             self.info.file_size,
             self.info.read_count,
@@ -135,7 +171,7 @@ impl Widget for &Interface {
         
     
         Paragraph::new(format!(
-            "Processed\nFile Name: {}\nSize: {}B\nRead Count: {}\nBase Count:{}",
+            "Processed\n\n File Name: {}\n Size: {}B\n Read Count: {}\n Base Count:{}",
             self.info.file_name,
             self.info.file_size,
             self.info.read_count,
@@ -143,11 +179,17 @@ impl Widget for &Interface {
             .block(Block::new())
             .render(fgrrind.inner(l1[0]), buf);
 
-         Block::bordered()
-            .title_top(Line::from("[ Completed ]".bold()).left_aligned())
-            .border_type(BorderType::Plain)
-            .render(main_layout[1], buf);
-    
+        // result_block.clone().render(main_layout[1], buf);
+        Tabs::new(vec![" Baselevel ", " Readlevel "])
+    .block(Block::bordered().title("Tabs"))
+    .style(Style::default().white())
+    .highlight_style(Style::default().green())
+    .select(self.active_tab)
+    .divider(" ")
+    .block(result_block)
+    .padding("|", "|").render(main_layout[1], buf);
+    //     
+
 
 
     }

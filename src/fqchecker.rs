@@ -36,6 +36,7 @@ pub mod fqc {
         pub base_count: usize,
         pub file_name: String,
         pub file_size: u64,
+        pub header: String,
         pub is_file_reading: bool
 
     }
@@ -53,6 +54,7 @@ pub mod fqc {
                     read_count: 0,
                     base_count: 0,
                     file_size: temp,
+                    header: String::new(),
                     file_name: filename.to_string(),
                     is_file_reading: false
 
@@ -311,9 +313,10 @@ pub mod fqc {
         // let mut total_reads: i64 = 0;
         for line in input_file_reader.lines() {
             if let Ok(ln) = line {
-                std::thread::sleep(Duration::from_millis(9));
+                // std::thread::sleep(Duration::from_millis(9));
                 if ln.starts_with("@") {
                     new_seq = true;
+                    infos.header = ln.clone();
                     continue;
                 } else if ln.starts_with("+") {
                     quality_ln = true;
