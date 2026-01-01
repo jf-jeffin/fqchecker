@@ -1,4 +1,4 @@
-use crate::fqchecker::fqc::CrrFileProcessInfo;
+use crate::{fqchecker::fqc::{BaseProfile, CrrFileProcessInfo, FQCOutput, FqcOpt, Helpers, ProcessingState}, main};
 use color_eyre::owo_colors::OwoColorize;
 use crossterm::event::{
     self,
@@ -12,8 +12,9 @@ use ratatui::{
     style::{Color, Style, Stylize},
     text::{Line, Text},
     symbols::border,
-    widgets::{self, Block, BorderType, Borders,Tabs, Padding, Paragraph, Widget},
+    widgets::{self, Block, BorderType, Table,Row,Tabs, Padding, Paragraph, Widget},
 };
+use tabled::settings::Width;
 use tokio::sync::watch::Receiver;
 
 
@@ -21,23 +22,26 @@ use tokio::sync::watch::Receiver;
 pub struct Interface {
     pub info: CrrFileProcessInfo,
     pub exit: bool,
-    pub active_tab: usize
+    pub active_tab: usize,
+    pub bp: BaseProfile,
+    pub process_state: ProcessingState 
     // pub Init_time
 }
+
+
+
 
 impl Interface {
     pub fn set_file_name(mut self, f: &str) -> Self {
         self.info.file_name = f.to_string();
         self
-    }
-    pub fn set_infos(mut self, new_value: CrrFileProcessInfo) {
-        self.info = new_value;
-    }
+    }   
 
     pub fn run(
         &mut self,
         terminal: &mut DefaultTerminal,
         rp: &mut Receiver<CrrFileProcessInfo>,
+        fqc_res: &FqcOpt
     ) -> std::io::Result<()> {
         
         
@@ -46,19 +50,28 @@ impl Interface {
                 info => {
                     self.info = info.clone();
                 }
+            
             }
-            
-            // if !self.info.is_file_reading{
-            
-                
-                
-            // }
 
+// tokio::runtime::Handle::current().block_on(self.set_infos(fqc_res));
+        // async {
+            match self.info.is_file_reading {
+                ProcessingState::Processed => { 
+                    if let Ok(r) = fqc_res.read(){
+                     self.bp = r.bp;
+                }
+            },
+                _ => ()
+            }
+        // };
             // terminal.clear()?;
             terminal.draw(|frame| {
                 self.draw(frame);
             })?;
-            self.handle_events();
+            match self.handle_events() {
+                Ok(_) => {},
+                Err(e) => eprint!("Error in handling key input.{}",e)
+            };
         }
         Ok(())
     }
@@ -146,7 +159,8 @@ impl Widget for &Interface {
 
 
         let id:String =  if let Some(l) = self.info.header.split_once(":"){
-                l.0.to_string().strip_prefix("@").unwrap().to_string()
+                // l.0.to_string().strip_prefix("@").unwrap().to_string();
+                format!("Machine Id: {}\n", l.0.to_string().strip_prefix("@").unwrap().to_string())
             } else { 
                 " ".to_string()
             } ; 
@@ -157,7 +171,7 @@ impl Widget for &Interface {
         
 
             // upper_col2.clone().render(main_layout[1], buf);
-        if self.info.is_file_reading {
+        if self.info.is_file_reading == ProcessingState::Processing {
             Paragraph::new(format!(
             " Processing...\n\n File Name:{}\n Size: {}B\n Read Count: {}\n Base Count:{}",
             self.info.file_name,
@@ -180,17 +194,21 @@ impl Widget for &Interface {
             .render(fgrrind.inner(l1[0]), buf);
 
         // result_block.clone().render(main_layout[1], buf);
-        Tabs::new(vec![" Baselevel ", " Readlevel "])
-    .block(Block::bordered().title("Tabs"))
-    .style(Style::default().white())
-    .highlight_style(Style::default().green())
-    .select(self.active_tab)
-    .divider(" ")
-    .block(result_block)
-    .padding("|", "|").render(main_layout[1], buf);
-    //     
+    //     Tabs::new(vec![" Baselevel ", " Readlevel "])
+    // // .block(Block::bordered().title("Tabs"))
+    // .style(Style::default().white())
+    // .highlight_style(Style::default().green())
+    // .select(self.active_tab)
+    // .divider(" ")
+    // .block(result_block)
+    // .padding("|", "|").render(main_layout[1], buf);
+    let result_str = format!("Total Bases: {}\nGC content: {}\nAmbigious Bases: {}", 
+                    self.bp.total, 
+                    self.bp.c+self.bp.g, 
+                    self.bp.n);
 
-
+        Paragraph::new(Text::from(result_str)).block(result_block).render(main_layout[1], buf);
+        
 
     }
 }
@@ -200,10 +218,11 @@ use std::time::Duration;
 pub fn exec(
     app: &mut Interface,
     info_rec_chan: Receiver<CrrFileProcessInfo>,
+    fqc_res: &mut FqcOpt
 ) -> std::io::Result<()> {
     let mut tui = ratatui::init();
     let mut ih = info_rec_chan;
-    let app = app.run(&mut tui, &mut ih);
+    let app = app.run(&mut tui, &mut ih, &fqc_res);
     ratatui::restore();
     app
 }

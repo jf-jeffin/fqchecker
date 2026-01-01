@@ -2,8 +2,8 @@ pub mod fqchecker;
 mod tui;
 
 use fqchecker::fqc::*;
-
-use tokio::sync::watch;
+use std::sync::{Arc,RwLock};
+use tokio::sync::{ watch };
 
 use crate::tui::Interface;
 
@@ -16,19 +16,23 @@ async fn main() -> std::io::Result<()> {
         std::process::exit(1);
     }
     if let Some(file_path) = file_path {
+        let res: FqcOpt = Arc::new(RwLock::new(FQCOutput::default()));
+        let mut res_for_task = Arc::clone(&res);
+        
         let prog_stat = CrrFileProcessInfo::new(file_path.as_str());
         let mut r = CrrFileProcessInfo::new(file_path.as_str());
         let (send_port, receive_port) = watch::channel(prog_stat);
         let mut tui_if = Interface::default();
         tokio::spawn(async move {
-            match tui::exec(&mut tui_if, receive_port) {
+            match tui::exec(&mut tui_if, receive_port, &mut res_for_task) {
                 Ok(_) => {}
                 Err(_) => {
                     panic!("Error in starting terminal interface!!");
                 }
             };
         });
-        fq_init(&mut r, send_port);
+        let _r = fq_init(&mut r, send_port,&res).await;
+
         
     }
     Ok(())

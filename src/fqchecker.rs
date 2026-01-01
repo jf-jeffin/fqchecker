@@ -11,7 +11,9 @@ pub mod fqc {
         builder::Builder,
         settings::{Alignment, Style, Width},
     };
-   
+    pub type FqcOpt= std::sync::Arc<std::sync::RwLock<FQCOutput>>;
+    // pub type FqcOpt= std::sync::Arc<tokio::sync::RwLock<FQCOutput>>;
+
 
     #[derive(Debug)]
     pub struct ReadInfo {
@@ -37,9 +39,12 @@ pub mod fqc {
         pub file_name: String,
         pub file_size: u64,
         pub header: String,
-        pub is_file_reading: bool
+        // pub is_file_reading: bool
+        pub is_file_reading: ProcessingState
 
     }
+
+
     impl CrrFileProcessInfo {
         pub fn new(filename: &str) -> Self {
             let mut temp = 0;
@@ -56,25 +61,39 @@ pub mod fqc {
                     file_size: temp,
                     header: String::new(),
                     file_name: filename.to_string(),
-                    is_file_reading: false
+                    is_file_reading: ProcessingState::NotProcessing
 
             }
         }
     }
 
     pub const PHRED_SCORE_RANGE: usize = 94;
-    #[derive(Debug)]
+
+    #[derive(Debug,Clone,Default)]
+    pub struct FQCOutput {
+        pub bp: BaseProfile,
+        pub bqp: BaseQualityProfile,
+    }
+
+    #[derive(Default,Clone, Debug, PartialEq)]
+  pub enum ProcessingState {
+        #[default]
+        NotProcessing,
+        Processing,
+        Processed
+    }
+
+    #[derive(Debug, Clone, Default, Copy)]
     pub struct BaseProfile {
-        total: i64,
-        a: i64,
-        c: i64,
-        g: i64,
-        t: i64,
-        n: i64,
+        pub total: i64,
+        pub a: i64,
+        pub c: i64,
+        pub g: i64,
+        pub t: i64,
+        pub n: i64,
     }
 
     pub trait Helpers {
-        fn init() -> Self;
         fn dsply_table(self: &Self);
         fn plot_graph(self: &Self);
     }
@@ -108,16 +127,7 @@ pub mod fqc {
     }
 
     impl Helpers for BaseProfile {
-        fn init() -> Self {
-            BaseProfile {
-                total: 0,
-                a: 0,
-                c: 0,
-                g: 0,
-                t: 0,
-                n: 0,
-            }
-        }
+        
 
         fn dsply_table(&self) {
             println!("self.total = {}", self.total);
@@ -186,8 +196,17 @@ pub mod fqc {
         }
     }
 
-    impl Helpers for BaseQualityProfile {
-        fn init() -> Self {
+    #[derive(Debug,Clone)]
+    pub struct BaseQualityProfile {
+        g_quality: [i64; PHRED_SCORE_RANGE],
+        a_quality: [i64; PHRED_SCORE_RANGE],
+        t_quality: [i64; PHRED_SCORE_RANGE],
+        c_quality: [i64; PHRED_SCORE_RANGE],
+        n_quality: [i64; PHRED_SCORE_RANGE],
+    }
+
+    impl Default for BaseQualityProfile {
+        fn default() -> Self {
             BaseQualityProfile {
                 g_quality: [0; PHRED_SCORE_RANGE],
                 t_quality: [0; PHRED_SCORE_RANGE],
@@ -196,6 +215,18 @@ pub mod fqc {
                 n_quality: [0; PHRED_SCORE_RANGE],
             }
         }
+    }
+
+    impl Helpers for BaseQualityProfile {
+        // fn init() -> Self {
+        //     BaseQualityProfile {
+        //         g_quality: [0; PHRED_SCORE_RANGE],
+        //         t_quality: [0; PHRED_SCORE_RANGE],
+        //         c_quality: [0; PHRED_SCORE_RANGE],
+        //         a_quality: [0; PHRED_SCORE_RANGE],
+        //         n_quality: [0; PHRED_SCORE_RANGE],
+        //     }
+        // }
 
         fn dsply_table(self: &Self) {
             let ava_qual = total_quality(self);
@@ -252,14 +283,7 @@ pub mod fqc {
         }
     }
 
-    #[derive(Debug)]
-    pub struct BaseQualityProfile {
-        g_quality: [i64; PHRED_SCORE_RANGE],
-        a_quality: [i64; PHRED_SCORE_RANGE],
-        t_quality: [i64; PHRED_SCORE_RANGE],
-        c_quality: [i64; PHRED_SCORE_RANGE],
-        n_quality: [i64; PHRED_SCORE_RANGE],
-    }
+    
 
     #[inline]
     fn count_bases<'a>(
@@ -300,15 +324,15 @@ pub mod fqc {
         input_file_reader: BufReader<File>,
         infos: &mut CrrFileProcessInfo,
         sp: Sender<CrrFileProcessInfo>,
-    ) -> (BaseProfile, BaseQualityProfile) {
+    ) -> FQCOutput {
         let mut new_seq: bool = false;
         let mut quality_ln: bool = false;
-        let mut b_profiles: BaseProfile = BaseProfile::init();
-        let mut bqf: BaseQualityProfile = BaseQualityProfile::init();
+        let mut b_profiles: BaseProfile = BaseProfile::default();
+        let mut bqf: BaseQualityProfile = BaseQualityProfile::default();
         let mut read_info = ReadInfo::init();
         let mut seq_ln: Vec<u8> = Vec::new();
         let mut quality_val_ln: Vec<u8> = Vec::new();
-        infos.is_file_reading = true;
+        infos.is_file_reading = ProcessingState::Processing;
         
         // let mut total_reads: i64 = 0;
         for line in input_file_reader.lines() {
@@ -352,19 +376,21 @@ pub mod fqc {
 
             }
         }
-        infos.is_file_reading =  false;
+        infos.is_file_reading =  ProcessingState::Processed;
+
         match sp.send(infos.clone()) {
                     Ok(_) => {}
                     Err(e) => {
                         panic!("Not working: {}",e)
                     }
                 }
+        
         drop(sp);
-        (b_profiles, bqf)
+        FQCOutput { bp:b_profiles , bqp: bqf }
         
     }
 
-    pub fn fq_init(infos: &mut CrrFileProcessInfo, sp: Sender<CrrFileProcessInfo>) {
+    pub  async  fn fq_init(infos: &mut CrrFileProcessInfo, sp: Sender<CrrFileProcessInfo>, fqc_res: &FqcOpt) -> BaseProfile {
         let c = "C:\\Users\\Jef Finn\\Downloads\\downsampled_SampleB_R1.fastq\\downsampled_SampleB_R1.fastq";
         let file = File::open(infos.file_name.as_str());
         match file {
@@ -374,10 +400,12 @@ pub mod fqc {
             }
             Ok(f) => {
                 let input_file_reader = BufReader::new(f);
-                let g = extract_count(input_file_reader, infos, sp);
-                // g.0.dsply_table();
-                // g.0.plot_graph();
-                // g.1.dsply_table();
+                let res= extract_count(input_file_reader, infos, sp);
+                if let Ok(mut r) = fqc_res.write(){
+                    r.bp = res.bp.clone();
+
+                };
+                return res.bp;
             }
         }
     }
